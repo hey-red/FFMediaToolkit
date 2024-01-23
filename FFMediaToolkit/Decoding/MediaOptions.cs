@@ -3,7 +3,9 @@
     using System;
     using System.Collections.Generic;
     using System.Drawing;
+
     using FFMediaToolkit.Graphics;
+
     using FFmpeg.AutoGen;
 
     /// <summary>
@@ -60,6 +62,12 @@
         /// Gets or sets the target video size for decoded video frames conversion. <see langword="null"/>, if no rescale.
         /// </summary>
         public Size? TargetVideoSize { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether frames should be scaled based on SAR value(if set).
+        /// When this option is enabled <see cref="TargetVideoSize"/> value is ignored.
+        /// </summary>
+        public bool RespectSampleAspectRatio { get; set; }
 
         /// <summary>
         /// Gets or sets the threshold value used to choose the best seek method. Set this to video GoP value (if know) to improve stream seek performance.
