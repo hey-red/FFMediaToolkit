@@ -3,9 +3,11 @@
     using System;
     using System.Drawing;
     using System.Runtime.InteropServices;
+
     using FFMediaToolkit.Common;
     using FFMediaToolkit.Decoding.Internal;
     using FFMediaToolkit.Helpers;
+
     using FFmpeg.AutoGen;
 
     /// <summary>
@@ -27,6 +29,7 @@
             FrameSize = new Size(codec->width, codec->height);
             PixelFormat = ((AVPixelFormat)codec->format).FormatEnum(11);
             AVPixelFormat = (AVPixelFormat)codec->format;
+            SampleAspectRatio = stream->sample_aspect_ratio;
 
             var matrix = (IntPtr)ffmpeg.av_stream_get_side_data(stream, AVPacketSideDataType.AV_PKT_DATA_DISPLAYMATRIX, null);
             Rotation = CalculateRotation(matrix);
@@ -51,6 +54,12 @@
         /// Gets a lowercase string representing the video pixel format.
         /// </summary>
         public string PixelFormat { get; }
+
+        /// <summary>
+        /// Gets sample aspect ratio.
+        /// 0 if unknown.
+        /// </summary>
+        public AVRational SampleAspectRatio { get; }
 
         /// <summary>
         /// Gets the video pixel format.
