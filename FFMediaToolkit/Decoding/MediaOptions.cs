@@ -63,6 +63,12 @@
         public Size? TargetVideoSize { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether frames should be scaled based on SAR value(if set).
+        /// When this option is enabled <see cref="TargetVideoSize"/> value is ignored.
+        /// </summary>
+        public bool RespectSampleAspectRatio { get; set; }
+
+        /// <summary>
         /// Gets or sets the threshold value used to choose the best seek method. Set this to video GoP value (if know) to improve stream seek performance.
         /// </summary>
         public int VideoSeekThreshold { get; set; } = 12;

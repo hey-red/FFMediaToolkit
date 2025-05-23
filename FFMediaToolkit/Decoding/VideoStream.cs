@@ -27,6 +27,14 @@
             : base(stream, options)
         {
             OutputFrameSize = options.TargetVideoSize ?? Info.FrameSize;
+
+            if (options.RespectSampleAspectRatio &&
+                Info.SampleAspectRatio.num > 1)
+            {
+                double width = (double)Info.SampleAspectRatio.num / Info.SampleAspectRatio.den * Info.FrameSize.Width;
+                OutputFrameSize = new Size((int)width, Info.FrameSize.Height);
+            }
+
             converter = new ImageConverter(OutputFrameSize, (AVPixelFormat)options.VideoPixelFormat);
 
             outputFrameStride = ImageData.EstimateStride(OutputFrameSize.Width, Options.VideoPixelFormat);
