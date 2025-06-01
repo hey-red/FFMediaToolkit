@@ -19,40 +19,45 @@
         /// <returns>The new video stream.</returns>
         public static OutputStream<VideoFrame> CreateVideo(OutputContainer container, VideoEncoderSettings config)
         {
-            var codecId = config.Codec == VideoCodec.Default ? container.Pointer->oformat->video_codec : (AVCodecID)config.Codec;
+            AVCodec* codec;
+            if (!string.IsNullOrEmpty(config.CodecName))
+            {
+                codec = ffmpeg.avcodec_find_encoder_by_name(config.CodecName);
+            }
+            else
+            {
+                var codecId = config.Codec == VideoCodec.Default ? container.Pointer->oformat->video_codec : (AVCodecID)config.Codec;
+                if (codecId == AVCodecID.AV_CODEC_ID_NONE)
+                    throw new InvalidOperationException("The media container doesn't support video!");
 
-            if (codecId == AVCodecID.AV_CODEC_ID_NONE)
-                throw new InvalidOperationException("The media container doesn't support video!");
-
-            var codec = ffmpeg.avcodec_find_encoder(codecId);
+                codec = ffmpeg.avcodec_find_encoder(codecId);
+            }
 
             if (codec == null)
-                throw new InvalidOperationException($"Cannot find an encoder with the {codecId}!");
+                throw new InvalidOperationException($"Cannot find the requested video codec");
 
             if (codec->type != AVMediaType.AVMEDIA_TYPE_VIDEO)
-                throw new InvalidOperationException($"The {codecId} encoder doesn't support video!");
+                throw new InvalidOperationException($"The {codec->id} encoder doesn't support video!");
 
             var stream = ffmpeg.avformat_new_stream(container.Pointer, codec);
             if (stream == null)
                 throw new InvalidOperationException("Cannot allocate AVStream");
 
             stream->time_base = config.TimeBase;
-            stream->r_frame_rate = config.FramerateRational;
+            stream->avg_frame_rate = config.FramerateRational;
 
             var codecContext = ffmpeg.avcodec_alloc_context3(codec);
             if (codecContext == null)
                 throw new InvalidOperationException("Cannot allocate AVCodecContext");
 
-            stream->codecpar->codec_id = codecId;
-            stream->codecpar->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
-            stream->codecpar->width = config.VideoWidth;
-            stream->codecpar->height = config.VideoHeight;
-            stream->codecpar->format = (int)config.VideoFormat;
-            stream->codecpar->bit_rate = config.Bitrate;
-
-            ffmpeg.avcodec_parameters_to_context(codecContext, stream->codecpar).ThrowIfError("Cannot copy stream parameters to encoder");
+            codecContext->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
+            codecContext->codec_id = codec->id;
+            codecContext->width = config.VideoWidth;
+            codecContext->height = config.VideoHeight;
+            codecContext->pix_fmt = (AVPixelFormat)config.VideoFormat;
+            codecContext->bit_rate = config.Bitrate;
+            codecContext->framerate = config.FramerateRational;
             codecContext->time_base = stream->time_base;
-            codecContext->framerate = stream->r_frame_rate;
             codecContext->gop_size = config.KeyframeRate;
 
             var dict = new FFDictionary(config.CodecOptions);
@@ -62,22 +67,26 @@
                 dict["crf"] = config.CRF.Value.ToString();
             }
 
-            if (config.Codec.IsMatch(VideoCodec.H264, VideoCodec.H265))
+            if (config.QP.HasValue && config.Codec.IsMatch(VideoCodec.H266))
+            {
+                dict["qp"] = config.QP.Value.ToString();
+            }
+
+            if (config.Codec.IsMatch(VideoCodec.H264, VideoCodec.H265, VideoCodec.H266))
             {
                 dict["preset"] = config.EncoderPreset.GetDescription();
             }
-
-            var ptr = dict.Pointer;
-            ffmpeg.avcodec_open2(codecContext, codec, &ptr).ThrowIfError("Failed to open video encoder.");
-
-            dict.Update(ptr);
-
-            ffmpeg.avcodec_parameters_from_context(stream->codecpar, codecContext).ThrowIfError("Cannot copy encoder parameters to output stream");
 
             if ((container.Pointer->oformat->flags & ffmpeg.AVFMT_GLOBALHEADER) != 0)
             {
                 codecContext->flags |= ffmpeg.AV_CODEC_FLAG_GLOBAL_HEADER;
             }
+
+            var ptr = dict.Pointer;
+            ffmpeg.avcodec_open2(codecContext, codec, &ptr).ThrowIfError("Failed to open video encoder.");
+            dict.Update(ptr);
+
+            ffmpeg.avcodec_parameters_from_context(stream->codecpar, codecContext).ThrowIfError("Cannot copy encoder parameters to output stream");
 
             return new OutputStream<VideoFrame>(stream, codecContext, container);
         }
@@ -90,18 +99,25 @@
         /// <returns>The new audio stream.</returns>
         public static OutputStream<AudioFrame> CreateAudio(OutputContainer container, AudioEncoderSettings config)
         {
-            var codecId = config.Codec == AudioCodec.Default ? container.Pointer->oformat->audio_codec : (AVCodecID)config.Codec;
+            AVCodec* codec;
+            if (!string.IsNullOrEmpty(config.CodecName))
+            {
+                codec = ffmpeg.avcodec_find_encoder_by_name(config.CodecName);
+            }
+            else
+            {
+                var codecId = config.Codec == AudioCodec.Default ? container.Pointer->oformat->audio_codec : (AVCodecID)config.Codec;
+                if (codecId == AVCodecID.AV_CODEC_ID_NONE)
+                    throw new InvalidOperationException("The media container doesn't support audio!");
 
-            if (codecId == AVCodecID.AV_CODEC_ID_NONE)
-                throw new InvalidOperationException("The media container doesn't support audio!");
-
-            var codec = ffmpeg.avcodec_find_encoder(codecId);
+                codec = ffmpeg.avcodec_find_encoder(codecId);
+            }
 
             if (codec == null)
-                throw new InvalidOperationException($"Cannot find an encoder with the {codecId}!");
+                throw new InvalidOperationException($"Cannot find the requested audio codec");
 
             if (codec->type != AVMediaType.AVMEDIA_TYPE_AUDIO)
-                throw new InvalidOperationException($"The {codecId} encoder doesn't support audio!");
+                throw new InvalidOperationException($"The {codec->id} encoder doesn't support audio!");
 
             var stream = ffmpeg.avformat_new_stream(container.Pointer, codec);
             if (stream == null)
@@ -111,7 +127,7 @@
             if (codecContext == null)
                 throw new InvalidOperationException("Cannot allocate AVCodecContext");
 
-            stream->codecpar->codec_id = codecId;
+            stream->codecpar->codec_id = codec->id;
             stream->codecpar->codec_type = AVMediaType.AVMEDIA_TYPE_AUDIO;
             stream->codecpar->sample_rate = config.SampleRate;
             stream->codecpar->frame_size = config.SamplesPerFrame;
@@ -123,6 +139,11 @@
             ffmpeg.avcodec_parameters_to_context(codecContext, stream->codecpar).ThrowIfError("Cannot copy stream parameters to encoder");
             codecContext->time_base = config.TimeBase;
 
+            if ((container.Pointer->oformat->flags & ffmpeg.AVFMT_GLOBALHEADER) != 0)
+            {
+                codecContext->flags |= ffmpeg.AV_CODEC_FLAG_GLOBAL_HEADER;
+            }
+
             var dict = new FFDictionary(config.CodecOptions);
             var ptr = dict.Pointer;
 
@@ -131,11 +152,6 @@
             dict.Update(ptr);
 
             ffmpeg.avcodec_parameters_from_context(stream->codecpar, codecContext).ThrowIfError("Cannot copy encoder parameters to output stream");
-
-            if ((container.Pointer->oformat->flags & ffmpeg.AVFMT_GLOBALHEADER) != 0)
-            {
-                codecContext->flags |= ffmpeg.AV_CODEC_FLAG_GLOBAL_HEADER;
-            }
 
             return new OutputStream<AudioFrame>(stream, codecContext, container);
         }

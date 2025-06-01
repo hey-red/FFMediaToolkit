@@ -1,5 +1,7 @@
 ﻿namespace FFMediaToolkit.Encoding.Internal
 {
+    using System;
+    using System.Runtime.CompilerServices;
     using FFMediaToolkit.Common;
     using FFMediaToolkit.Common.Internal;
     using FFMediaToolkit.Helpers;
@@ -13,7 +15,7 @@
         where TFrame : MediaFrame
     {
         private readonly MediaPacket packet;
-        private AVCodecContext* codecContext;
+        private readonly AVCodecContext* codecContext;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="OutputStream{TFrame}"/> class.
@@ -70,17 +72,17 @@
             FlushEncoder();
             packet.Dispose();
 
-            ffmpeg.avcodec_close(codecContext);
-            ffmpeg.av_free(codecContext);
-            codecContext = null;
+            fixed (AVCodecContext** codecContextRef = &codecContext)
+            {
+                ffmpeg.avcodec_free_context(codecContextRef);
+            }
         }
 
         private void FlushEncoder()
         {
+            ffmpeg.avcodec_send_frame(codecContext, null);
             while (true)
             {
-                ffmpeg.avcodec_send_frame(codecContext, null);
-
                 if (ffmpeg.avcodec_receive_packet(codecContext, packet) == 0)
                 {
                     packet.RescaleTimestamp(codecContext->time_base, TimeBase);
