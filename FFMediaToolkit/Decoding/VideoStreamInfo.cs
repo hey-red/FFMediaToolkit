@@ -32,7 +32,10 @@
             SampleAspectRatio = stream->sample_aspect_ratio;
 
             var packetSideData = ffmpeg.av_packet_side_data_get(codec->coded_side_data, codec->nb_coded_side_data, AVPacketSideDataType.AV_PKT_DATA_DISPLAYMATRIX);
-            Rotation = CalculateRotation((IntPtr)packetSideData->data);
+            if (packetSideData != null)
+            {
+                Rotation = CalculateRotation((IntPtr)packetSideData->data);
+            }
         }
 
         /// <summary>
