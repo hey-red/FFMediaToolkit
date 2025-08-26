@@ -12,22 +12,24 @@
     /// </summary>
     internal unsafe class OutputContainer : Wrapper<AVFormatContext>
     {
+        private bool isHeaderWritten;
+
         private OutputContainer(AVFormatContext* formatContext)
             : base(formatContext)
         {
-            Video = new List<(OutputStream<VideoFrame>, VideoEncoderSettings)>();
-            Audio = new List<(OutputStream<AudioFrame>, AudioEncoderSettings)>();
+            Video = new List<(Encoder<VideoFrame>, VideoEncoderSettings)>();
+            Audio = new List<(Encoder<AudioFrame>, AudioEncoderSettings)>();
         }
 
         /// <summary>
         /// Gets the video streams.
         /// </summary>
-        public List<(OutputStream<VideoFrame> stream, VideoEncoderSettings config)> Video { get; }
+        public List<(Encoder<VideoFrame> stream, VideoEncoderSettings config)> Video { get; }
 
         /// <summary>
         /// Gets the audio streams.
         /// </summary>
-        public List<(OutputStream<AudioFrame> stream, AudioEncoderSettings config)> Audio { get; }
+        public List<(Encoder<AudioFrame> stream, AudioEncoderSettings config)> Audio { get; }
 
         /// <summary>
         /// Gets a value indicating whether the file is created.
@@ -83,7 +85,7 @@
                 throw new InvalidOperationException("The stream must be added before creating a file.");
             }
 
-            Video.Add((OutputStreamFactory.CreateVideo(this, config), config));
+            Video.Add((EncoderFactory.CreateVideo(this, config), config));
         }
 
         /// <summary>
@@ -97,7 +99,7 @@
                 throw new InvalidOperationException("The stream must be added before creating a file.");
             }
 
-            Audio.Add((OutputStreamFactory.CreateAudio(this, config), config));
+            Audio.Add((EncoderFactory.CreateAudio(this, config), config));
         }
 
         /// <summary>
@@ -111,17 +113,17 @@
                 return;
             }
 
-            if (Video == null)
+            if (Video.Count == 0 && Audio.Count == 0)
             {
-                throw new InvalidOperationException("Cannot create empty media file. You have to add video stream before locking the file");
+                throw new InvalidOperationException("Cannot create empty media file. You have to add stream before locking the file");
             }
 
             var ptr = ContainerOptions.Pointer;
 
             ffmpeg.avio_open(&Pointer->pb, path, ffmpeg.AVIO_FLAG_WRITE).ThrowIfError("Cannot create the output file.");
-            ffmpeg.avformat_write_header(Pointer, &ptr);
-
             IsFileCreated = true;
+            ffmpeg.avformat_write_header(Pointer, &ptr).ThrowIfError("Cannot write format header");
+            isHeaderWritten = true;
         }
 
         /// <summary>
@@ -135,12 +137,28 @@
                 throw new InvalidOperationException("The file must be opened before writing a packet. Use the OutputContainer.CreateFile() method.");
             }
 
-            ffmpeg.av_interleaved_write_frame(Pointer, packet);
+            ffmpeg.av_interleaved_write_frame(Pointer, packet).ThrowIfError("Cannot write packet");
+        }
+
+        /// <summary>
+        /// Writes file trailer
+        /// </summary>
+        public void WriteTrailer()
+        {
+            if (isHeaderWritten)
+            {
+                ffmpeg.av_write_trailer(Pointer).ThrowIfError("Cannot write file trailer");
+            }
         }
 
         /// <inheritdoc/>
         protected override void OnDisposing()
         {
+            if (IsFileCreated)
+            {
+                ffmpeg.avio_closep(&Pointer->pb);
+            }
+
             foreach (var output in Video)
             {
                 output.stream.Dispose();
@@ -149,12 +167,6 @@
             foreach (var output in Audio)
             {
                 output.stream.Dispose();
-            }
-
-            if (IsFileCreated)
-            {
-                ffmpeg.av_write_trailer(Pointer);
-                ffmpeg.avio_close(Pointer->pb);
             }
 
             ffmpeg.avformat_free_context(Pointer);

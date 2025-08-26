@@ -11,23 +11,25 @@
     /// Represents a output multimedia stream.
     /// </summary>
     /// <typeparam name="TFrame">The type of frames in the stream.</typeparam>
-    internal unsafe class OutputStream<TFrame> : Wrapper<AVStream>
+    internal unsafe class Encoder<TFrame> : IDisposable
         where TFrame : MediaFrame
     {
         private readonly MediaPacket packet;
         private readonly AVCodecContext* codecContext;
+        private readonly AVStream* stream;
+        private bool isDisposed;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="OutputStream{TFrame}"/> class.
+        /// Initializes a new instance of the <see cref="Encoder{TFrame}"/> class.
         /// </summary>
         /// <param name="stream">The multimedia stream.</param>
         /// <param name="codec">Codec context.</param>
         /// <param name="owner">The container that owns the stream.</param>
-        public OutputStream(AVStream* stream, AVCodecContext* codec, OutputContainer owner)
-            : base(stream)
+        public Encoder(AVStream* stream, AVCodecContext* codec, OutputContainer owner)
         {
             OwnerFile = owner;
             codecContext = codec;
+            this.stream = stream;
             packet = MediaPacket.AllocateEmpty();
         }
 
@@ -39,12 +41,12 @@
         /// <summary>
         /// Gets the stream index.
         /// </summary>
-        public int Index => Pointer->index;
+        public int Index => stream->index;
 
         /// <summary>
         /// Gets the stream time base.
         /// </summary>
-        public AVRational TimeBase => Pointer->time_base;
+        public AVRational TimeBase => stream->time_base;
 
         /// <summary>
         /// Writes the specified frame to this stream.
@@ -66,36 +68,39 @@
             packet.Wipe();
         }
 
-        /// <inheritdoc/>
-        protected override void OnDisposing()
+        /// <summary>
+        /// Writes buffered frames to the stream
+        /// </summary>
+        public void FlushEncoder()
         {
-            FlushEncoder();
+            var flushing = ffmpeg.avcodec_send_frame(codecContext, null) == 0;
+            while (flushing)
+            {
+                packet.Wipe();
+                flushing = ffmpeg.avcodec_receive_packet(codecContext, packet) == 0;
+                if (flushing)
+                {
+                    packet.RescaleTimestamp(codecContext->time_base, TimeBase);
+                    packet.StreamIndex = Index;
+                    OwnerFile.WritePacket(packet);
+                }
+            }
+        }
+
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            if (isDisposed)
+                return;
+
             packet.Dispose();
 
             fixed (AVCodecContext** codecContextRef = &codecContext)
             {
                 ffmpeg.avcodec_free_context(codecContextRef);
             }
-        }
 
-        private void FlushEncoder()
-        {
-            ffmpeg.avcodec_send_frame(codecContext, null);
-            while (true)
-            {
-                if (ffmpeg.avcodec_receive_packet(codecContext, packet) == 0)
-                {
-                    packet.RescaleTimestamp(codecContext->time_base, TimeBase);
-                    packet.StreamIndex = Index;
-                    OwnerFile.WritePacket(packet);
-                }
-                else
-                {
-                    break;
-                }
-
-                packet.Wipe();
-            }
+            isDisposed = true;
         }
     }
 }

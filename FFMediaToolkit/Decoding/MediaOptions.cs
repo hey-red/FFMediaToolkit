@@ -63,20 +63,19 @@
         public Size? TargetVideoSize { get; set; }
 
         /// <summary>
-        /// Gets or sets a value indicating whether frames should be scaled based on SAR value(if set).
-        /// When this option is enabled <see cref="TargetVideoSize"/> value is ignored.
+        /// Gets or sets a value indicating whether video frames will be flipped vertically.
         /// </summary>
-        public bool RespectSampleAspectRatio { get; set; }
+        public bool FlipVertically { get; set; } = false;
 
         /// <summary>
-        /// Gets or sets the threshold value used to choose the best seek method. Set this to video GoP value (if know) to improve stream seek performance.
+        /// Gets or sets the <see cref="VideoStream.GetFrame"/> seek threshold in milliseconds, used to decide whether to call slow <c>av_seek_frame</c> method or to read subsequent frames until the desired frame is found. Default value is 500 ms.
         /// </summary>
-        public int VideoSeekThreshold { get; set; } = 12;
+        public int VideoSeekThreshold { get; set; } = 500;
 
         /// <summary>
-        /// Gets or sets the threshold value used to choose the best seek method.
+        ///  Gets or sets the <see cref="AudioStream.GetFrame"/> seek threshold in milliseconds, used to decide whether to call slow <c>av_seek_frame</c> method or to read subsequent frames until the desired frame is found. Default value is 500 ms.
         /// </summary>
-        public int AudioSeekThreshold { get; set; } = 12;
+        public int AudioSeekThreshold { get; set; } = 500;
 
         /// <summary>
         /// Gets or sets the number of decoder threads (by the 'threads' flag). The default value is <see langword="null"/> - 'auto'.

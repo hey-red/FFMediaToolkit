@@ -11,7 +11,7 @@
         /// Initializes a new instance of the <see cref="MediaFrame"/> class.
         /// </summary>
         /// <param name="frame">The <see cref="AVFrame"/> object.</param>
-        public MediaFrame(AVFrame* frame)
+        protected MediaFrame(AVFrame* frame)
             : base(frame)
         {
         }
@@ -35,10 +35,13 @@
         }
 
         /// <summary>
-        /// Changes the pointer to the media frame.
+        /// Gets or sets the frame duration
         /// </summary>
-        /// <param name="newFrame">The new pointer to a <see cref="AVFrame"/> object.</param>
-        internal virtual void Update(AVFrame* newFrame) => UpdatePointer(newFrame);
+        public long Duration
+        {
+            get => Pointer->duration;
+            set => Pointer->duration = value;
+        }
 
         /// <inheritdoc/>
         protected override void OnDisposing()
