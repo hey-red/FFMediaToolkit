@@ -10,23 +10,9 @@
     /// </summary>
     internal unsafe class AudioFrame : MediaFrame
     {
-        /// <summary>
-        /// Initializes a new instance of the <see cref="AudioFrame"/> class with empty frame data.
-        /// </summary>
-        public AudioFrame()
-            : base(ffmpeg.av_frame_alloc())
-        {
-        }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="AudioFrame"/> class using existing <see cref="AVFrame"/>.
-        /// </summary>
-        /// <param name="frame">The audio <see cref="AVFrame"/>.</param>
-        public AudioFrame(AVFrame* frame)
+        private AudioFrame(AVFrame* frame)
             : base(frame)
         {
-            if (frame->GetMediaType() != MediaType.Audio)
-                throw new ArgumentException("Cannot create an AudioFrame instance from the AVFrame with type: " + frame->GetMediaType());
         }
 
         /// <summary>
@@ -68,6 +54,8 @@
         public static AudioFrame Create(int sample_rate, int num_channels, int num_samples, AVChannelLayout channel_layout, SampleFormat sampleFormat, long decodingTimestamp, long presentationTimestamp)
         {
             var frame = ffmpeg.av_frame_alloc();
+            if (frame == null)
+                throw new FFmpegException("Cannot allocate audio AVFrame", ffmpeg.ENOMEM);
 
             frame->sample_rate = sample_rate;
 
@@ -78,7 +66,7 @@
             frame->pts = presentationTimestamp;
             frame->pkt_dts = decodingTimestamp;
 
-            ffmpeg.av_frame_get_buffer(frame, 32);
+            ffmpeg.av_frame_get_buffer(frame, 0).ThrowIfError("Cannot allocate audio AVFrame buffer");
 
             return new AudioFrame(frame);
         }
@@ -87,7 +75,14 @@
         /// Creates an empty frame for decoding.
         /// </summary>
         /// <returns>The empty <see cref="AudioFrame"/>.</returns>
-        public static AudioFrame CreateEmpty() => new AudioFrame();
+        public static AudioFrame CreateEmpty()
+        {
+            var frame = ffmpeg.av_frame_alloc();
+            if (frame == null)
+                throw new FFmpegException("Cannot allocate audio AVFrame", ffmpeg.ENOMEM);
+
+            return new AudioFrame(frame);
+        }
 
         /// <summary>
         /// Fetches raw audio data from this audio frame for specified channel.
@@ -182,17 +177,6 @@
 
                 newData.CopyTo(currData);
             }
-        }
-
-        /// <inheritdoc/>
-        internal override unsafe void Update(AVFrame* newFrame)
-        {
-            if (newFrame->GetMediaType() != MediaType.Audio)
-            {
-                throw new ArgumentException("The new frame doesn't contain audio data.");
-            }
-
-            base.Update(newFrame);
         }
     }
 }

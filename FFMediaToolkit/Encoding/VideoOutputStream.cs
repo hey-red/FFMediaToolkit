@@ -13,7 +13,7 @@
     /// </summary>
     public class VideoOutputStream : IDisposable
     {
-        private readonly OutputStream<VideoFrame> stream;
+        private readonly Encoder<VideoFrame> encoder;
         private readonly VideoFrame encodedFrame;
         private readonly ImageConverter converter;
 
@@ -23,16 +23,16 @@
         /// <summary>
         /// Initializes a new instance of the <see cref="VideoOutputStream"/> class.
         /// </summary>
-        /// <param name="stream">The video stream.</param>
+        /// <param name="encoder">The video stream.</param>
         /// <param name="config">The stream setting.</param>
-        internal VideoOutputStream(OutputStream<VideoFrame> stream, VideoEncoderSettings config)
+        internal VideoOutputStream(Encoder<VideoFrame> encoder, VideoEncoderSettings config)
         {
-            this.stream = stream;
+            this.encoder = encoder;
             Configuration = config;
 
             var frameSize = new Size(config.VideoWidth, config.VideoHeight);
             encodedFrame = VideoFrame.Create(frameSize, (AVPixelFormat)config.VideoFormat);
-            converter = new ImageConverter(frameSize, (AVPixelFormat)config.VideoFormat);
+            converter = new ImageConverter(frameSize, (AVPixelFormat)config.VideoFormat, config.FlipVertically);
         }
 
         /// <summary>
@@ -55,9 +55,9 @@
             if (customPtsValue <= lastFramePts)
                 throw new Exception("Cannot add a frame that occurs chronologically before the most recently written frame!");
 
-            encodedFrame.UpdateFromBitmap(frame, converter);
+            converter.FillAVFrame(frame, encodedFrame);
             encodedFrame.PresentationTimestamp = customPtsValue;
-            stream.Push(encodedFrame);
+            encoder.Push(encodedFrame);
 
             lastFramePts = customPtsValue;
         }
@@ -79,11 +79,10 @@
         public void Dispose()
         {
             if (isDisposed)
-            {
                 return;
-            }
 
-            stream.Dispose();
+            encoder.FlushEncoder();
+
             encodedFrame.Dispose();
             converter.Dispose();
 

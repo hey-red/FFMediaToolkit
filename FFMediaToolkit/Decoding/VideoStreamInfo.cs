@@ -57,7 +57,7 @@
         /// Gets a lowercase string representing the video pixel format.
         /// </summary>
         public string PixelFormat { get; }
-
+        
         /// <summary>
         /// Gets sample aspect ratio.
         /// 0 if unknown.

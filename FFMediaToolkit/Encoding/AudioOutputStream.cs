@@ -12,7 +12,7 @@
     /// </summary>
     public unsafe class AudioOutputStream : IDisposable
     {
-        private readonly OutputStream<AudioFrame> stream;
+        private readonly Encoder<AudioFrame> encoder;
         private readonly AudioFrame frame;
 
         private SwrContext* swrContext;
@@ -23,11 +23,11 @@
         /// <summary>
         /// Initializes a new instance of the <see cref="AudioOutputStream"/> class.
         /// </summary>
-        /// <param name="stream">The audio stream.</param>
+        /// <param name="encoder">The audio stream.</param>
         /// <param name="config">The stream setting.</param>
-        internal AudioOutputStream(OutputStream<AudioFrame> stream, AudioEncoderSettings config)
+        internal AudioOutputStream(Encoder<AudioFrame> encoder, AudioEncoderSettings config)
         {
-            this.stream = stream;
+            this.encoder = encoder;
 
             AVChannelLayout channelLayout;
             ffmpeg.av_channel_layout_default(&channelLayout, config.Channels);
@@ -48,6 +48,11 @@
             Configuration = config;
             frame = AudioFrame.Create(config.SampleRate, config.Channels, config.SamplesPerFrame, channelLayout, SampleFormat.SingleP, 0, 0);
         }
+
+        /// <summary>
+        /// Finalizes an instance of the <see cref="AudioOutputStream"/> class.
+        /// </summary>
+        ~AudioOutputStream() => Dispose(false);
 
         /// <summary>
         /// Gets the video encoding configuration used to create this stream.
@@ -83,7 +88,7 @@
 
             ffmpeg.swr_convert_frame(swrContext, converted.Pointer, frame.Pointer);
 
-            stream.Push(converted);
+            encoder.Push(converted);
             converted.Dispose();
 
             lastFramePts = customPtsValue;
@@ -101,7 +106,7 @@
 
             frame.UpdateFromSampleData(samples);
             frame.PresentationTimestamp = customPtsValue;
-            stream.Push(frame);
+            encoder.Push(frame);
 
             lastFramePts = customPtsValue;
         }
@@ -135,17 +140,28 @@
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (isDisposed)
-            {
-                return;
-            }
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
 
-            stream.Dispose();
-            frame.Dispose();
-
+        private void ReleaseUnmanagedResources()
+        {
             fixed (SwrContext** ptr = &swrContext)
             {
                 ffmpeg.swr_free(ptr);
+            }
+        }
+
+        private void Dispose(bool disposing)
+        {
+            if (isDisposed)
+                return;
+
+            ReleaseUnmanagedResources();
+            if (disposing)
+            {
+                encoder.FlushEncoder();
+                frame.Dispose();
             }
 
             isDisposed = true;
