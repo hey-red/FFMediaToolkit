@@ -17,6 +17,11 @@
         }
 
         /// <summary>
+        /// Gets the frame timestamp estimated by FFmpeg.
+        /// </summary>
+        public long Timestamp => Pointer->best_effort_timestamp;
+
+        /// <summary>
         /// Gets or sets the frame PTS value in the stream time base units.
         /// </summary>
         public long PresentationTimestamp

@@ -35,7 +35,7 @@
         /// <summary>
         /// Gets the timestamp of the recently decoded frame in the media stream.
         /// </summary>
-        public TimeSpan Position => Math.Max(decoder.RecentlyDecodedFrame.PresentationTimestamp, 0).ToTimeSpan(Info.TimeBase);
+        public TimeSpan Position => Math.Max(decoder.RecentlyDecodedFrame.Timestamp, 0).ToTimeSpan(Info.TimeBase);
 
         /// <summary>
         /// Indicates whether the stream has buffered frame data.
@@ -84,12 +84,12 @@
             var frame = decoder.RecentlyDecodedFrame;
             var requestedTs = Math.Max(0, Math.Min(time.ToTimestamp(Info.TimeBase), Info.DurationRaw));
 
-            if (requestedTs < frame.PresentationTimestamp || requestedTs >= frame.PresentationTimestamp + seekThreshold)
+            if (requestedTs < frame.Timestamp || requestedTs >= frame.Timestamp + seekThreshold)
             {
                 decoder.OwnerFile.SeekFile(requestedTs, Info.Index);
             }
 
-            while (frame.PresentationTimestamp + frame.Duration <= requestedTs)
+            while (frame.Timestamp + frame.Duration <= requestedTs)
             {
                 decoder.ReadNextFrame();
             }
