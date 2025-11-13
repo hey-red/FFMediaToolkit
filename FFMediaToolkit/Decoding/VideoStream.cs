@@ -15,7 +15,6 @@
     /// </summary>
     public class VideoStream : MediaStream
     {
-        private readonly Size outputFrameSize;
         private readonly ImageConverter converter;
         private bool isDisposed;
 
@@ -27,20 +26,35 @@
         internal VideoStream(Decoder stream, MediaOptions options)
             : base(stream, options, options.VideoSeekThreshold)
         {
-            outputFrameSize = options.TargetVideoSize ?? Info.FrameSize;
-            
-            if (options.RespectSampleAspectRatio &&
-                Info.SampleAspectRatio.num > 1)
-            {
-                double width = (double)Info.SampleAspectRatio.num / Info.SampleAspectRatio.den * Info.FrameSize.Width;
-                outputFrameSize = new Size((int)width, Info.FrameSize.Height);
-            }
-            
-            converter = new ImageConverter(outputFrameSize, (AVPixelFormat)options.VideoPixelFormat, options.FlipVertically);
+            OutputFrameSize = options.TargetVideoSize ?? Info.FrameSize;
 
-            FrameStride = ImageData.EstimateStride(outputFrameSize.Width, Options.VideoPixelFormat);
-            FrameByteCount = FrameStride * outputFrameSize.Height;
+            if (options.RespectSampleAspectRatio &&
+                Info.SampleAspectRatio.num > 1 &&
+                Info.SampleAspectRatio.den > 1)
+            {
+                double dar = (double)Info.FrameSize.Width * Info.SampleAspectRatio.num / (Info.FrameSize.Height * Info.SampleAspectRatio.den);
+                if (dar > 1.0)
+                {
+                    var width = (int)Math.Round(Info.FrameSize.Width * (double)Info.SampleAspectRatio.num / Info.SampleAspectRatio.den);
+                    OutputFrameSize = new Size(width, Info.FrameSize.Height);
+                }
+                else if (dar < 1.0)
+                {
+                    var height = (int)Math.Round(Info.FrameSize.Height * (double)Info.SampleAspectRatio.den / Info.SampleAspectRatio.num);
+                    OutputFrameSize = new Size(Info.FrameSize.Width, height);
+                }
+            }
+
+            converter = new ImageConverter(OutputFrameSize, (AVPixelFormat)options.VideoPixelFormat, options.FlipVertically);
+
+            FrameStride = ImageData.EstimateStride(OutputFrameSize.Width, Options.VideoPixelFormat);
+            FrameByteCount = FrameStride * OutputFrameSize.Height;
         }
+
+        /// <summary>
+        /// Gets actual frame size
+        /// </summary>
+        public Size OutputFrameSize { get; }
 
         /// <summary>
         /// Gets informations about this stream.
@@ -253,7 +267,7 @@
 
         private unsafe ImageData CreatePooledBitmap(VideoFrame frame)
         {
-            var bitmap = ImageData.CreatePooled(outputFrameSize, Options.VideoPixelFormat);
+            var bitmap = ImageData.CreatePooled(OutputFrameSize, Options.VideoPixelFormat);
             fixed (byte* ptr = bitmap.Data)
             {
                 converter.AVFrameToBitmap(frame, ptr, bitmap.Stride);
