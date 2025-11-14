@@ -32,16 +32,16 @@
                 Info.SampleAspectRatio.num > 1 &&
                 Info.SampleAspectRatio.den > 1)
             {
-                double dar = (double)Info.FrameSize.Width * Info.SampleAspectRatio.num / (Info.FrameSize.Height * Info.SampleAspectRatio.den);
+                double dar = (double)OutputFrameSize.Width * Info.SampleAspectRatio.num / (OutputFrameSize.Height * Info.SampleAspectRatio.den);
                 if (dar > 1.0)
                 {
-                    var width = (int)Math.Round(Info.FrameSize.Width * (double)Info.SampleAspectRatio.num / Info.SampleAspectRatio.den);
-                    OutputFrameSize = new Size(width, Info.FrameSize.Height);
+                    var width = (int)Math.Round(OutputFrameSize.Width * (double)Info.SampleAspectRatio.num / Info.SampleAspectRatio.den);
+                    OutputFrameSize = new Size(width, OutputFrameSize.Height);
                 }
                 else if (dar < 1.0)
                 {
-                    var height = (int)Math.Round(Info.FrameSize.Height * (double)Info.SampleAspectRatio.den / Info.SampleAspectRatio.num);
-                    OutputFrameSize = new Size(Info.FrameSize.Width, height);
+                    var height = (int)Math.Round(OutputFrameSize.Height * (double)Info.SampleAspectRatio.den / Info.SampleAspectRatio.num);
+                    OutputFrameSize = new Size(OutputFrameSize.Width, height);
                 }
             }
 
