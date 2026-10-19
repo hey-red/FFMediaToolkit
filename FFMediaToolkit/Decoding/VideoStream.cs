@@ -39,12 +39,18 @@
                 {
                     int targetWidth = OutputFrameSize.Width;
                     int targetHeight = OutputFrameSize.Height;
-
-                    if (sar != 0)
+                    
+                    if (sar < 1.0)
                     {
+                        // if a pixel is compressed horizontally, we stretch it vertically
+                        targetHeight = (int)Math.Round(targetHeight / sar);
+                    }
+                    else
+                    {
+                        // If a pixel is stretched horizontally, we stretch the horizontal dimension.
                         targetWidth = (int)Math.Round(targetWidth * sar);
                     }
-
+                    
                     // Frame dimensions for YUV/RGB color spaces MUST be even numbers.
                     if (targetWidth % 2 != 0) targetWidth++;
                     if (targetHeight % 2 != 0) targetHeight++;
