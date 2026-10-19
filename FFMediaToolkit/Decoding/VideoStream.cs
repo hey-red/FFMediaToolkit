@@ -28,20 +28,28 @@
         {
             OutputFrameSize = options.TargetVideoSize ?? Info.FrameSize;
 
-            if (options.RespectSampleAspectRatio &&
-                Info.SampleAspectRatio.num > 1 &&
-                Info.SampleAspectRatio.den > 1)
+            if (options.RespectSampleAspectRatio && 
+                Info.SampleAspectRatio.num > 0 && 
+                Info.SampleAspectRatio.den > 0)
             {
-                double dar = (double)OutputFrameSize.Width * Info.SampleAspectRatio.num / (OutputFrameSize.Height * Info.SampleAspectRatio.den);
-                if (dar > 1.0)
+                double sar = (double)Info.SampleAspectRatio.num / Info.SampleAspectRatio.den;
+
+                // Verify that the pixels are indeed not square
+                if (Math.Abs(sar - 1.0) > 0.001)
                 {
-                    var width = (int)Math.Round(OutputFrameSize.Width * (double)Info.SampleAspectRatio.num / Info.SampleAspectRatio.den);
-                    OutputFrameSize = new Size(width, OutputFrameSize.Height);
-                }
-                else if (dar < 1.0)
-                {
-                    var height = (int)Math.Round(OutputFrameSize.Height * (double)Info.SampleAspectRatio.den / Info.SampleAspectRatio.num);
-                    OutputFrameSize = new Size(OutputFrameSize.Width, height);
+                    int targetWidth = OutputFrameSize.Width;
+                    int targetHeight = OutputFrameSize.Height;
+
+                    if (sar != 0)
+                    {
+                        targetWidth = (int)Math.Round(targetWidth * sar);
+                    }
+
+                    // Frame dimensions for YUV/RGB color spaces MUST be even numbers.
+                    if (targetWidth % 2 != 0) targetWidth++;
+                    if (targetHeight % 2 != 0) targetHeight++;
+
+                    OutputFrameSize = new Size(targetWidth, targetHeight);
                 }
             }
 
