@@ -38,6 +38,13 @@
                 .ThrowIfError("Cannot open the stream codec!");
             codecContext->pkt_timebase = stream->time_base;
 
+            // Here thread_count = 0 means "auto" (libavcodec picks the number of threads from the CPU core count).
+            // Only video is affected; audio decoders gain little from threading.
+            if (options.DecoderThreads == null && stream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO)
+            {
+                codecContext->thread_count = 0;
+            }
+
             var dict = new FFDictionary(options.DecoderOptions, false);
             fixed (void* dictPtrRef = &dict.PointerRef)
             {
