@@ -23,6 +23,20 @@
         private Size lastSourceSize;
         private byte[] tmpBuffer = { };
 
+        // Reusable scratch AVFrame used by AVFrameToBitmap. Its size and pixel format are always
+        // destinationSize/destinationFormat, which never change during the lifetime of the converter, so it is
+        // allocated once on first use instead of on every decoded frame.
+        // Freed in OnDisposing.
+        private AVFrame* scaledFrame;
+
+        // Reusable argument arrays for sws_scale in FillAVFrame. They used to be created with `new` for every
+        // encoded frame, which produced garbage on the encoding hot path.
+        // Only element [0] is ever set.
+        // Elements 1..3 stay null/0. The converter already keeps mutable state (sws context, tmpBuffer),
+        // so it is not thread-safe anyway and sharing these arrays does not change that.
+        private readonly byte*[] srcData = new byte*[4];
+        private readonly int[] srcLinesize = new int[4];
+
         /// <summary>
         ///     Initializes a new instance of the <see cref="ImageConverter" /> class.
         /// </summary>
@@ -60,11 +74,15 @@
             var source = shouldUseTmpBuffer ? tmpBuffer : bitmap.Data;
             fixed (byte* ptr = source)
             {
-                var data = new byte*[4]
-                    { flipVertically ? ptr + bitmap.Stride * (bitmap.ImageSize.Height - 1) : ptr, null, null, null };
-                var linesize = new int[4] { flipVertically ? -bitmap.Stride : bitmap.Stride, 0, 0, 0 };
-                ffmpeg.sws_scale(Pointer, data, linesize, 0, bitmap.ImageSize.Height, destinationFrame.Pointer->data,
+                // Fill the reusable srcData/srcLinesize arrays instead of allocating new ones per frame.
+                srcData[0] = flipVertically ? ptr + bitmap.Stride * (bitmap.ImageSize.Height - 1) : ptr;
+                srcLinesize[0] = flipVertically ? -bitmap.Stride : bitmap.Stride;
+
+                ffmpeg.sws_scale(Pointer, srcData, srcLinesize, 0, bitmap.ImageSize.Height, destinationFrame.Pointer->data,
                     destinationFrame.Pointer->linesize);
+
+                // Do not keep a pointer into memory that is no longer pinned once we leave the fixed block.
+                srcData[0] = null;
             }
         }
 
@@ -83,25 +101,13 @@
             var dstHeight = destinationSize.Height;
             var outputFormat = destinationFormat;
 
-            // Allocate a temporary AVFrame to hold the scaled output.
+            // Use a scratch AVFrame to hold the scaled output.
             // We do NOT write directly into the caller-owned destination buffer because
             // libswscale expects a proper AVFrame-backed allocation and the destination
             // buffer may have padding / stride / size differences.
-            var tmp = ffmpeg.av_frame_alloc();
-            if (tmp == null)
-            {
-                throw new FFmpegException("Cannot allocate AVFrame.");
-            }
-
-            tmp->format = (int)outputFormat;
-            tmp->width = dstWidth;
-            tmp->height = dstHeight;
-
-            if (ffmpeg.av_frame_get_buffer(tmp, 32) < 0)
-            {
-                ffmpeg.av_frame_free(&tmp);
-                throw new FFmpegException("av_frame_get_buffer failed.");
-            }
+            // The scratch frame is allocated once and reused for every call (see GetScaledFrame)
+            // instead of being allocated and freed for each decoded frame.
+            var tmp = GetScaledFrame();
 
             // Convert the source frame into the temporary AVFrame.
             // This is safe even when the source and destination dimensions differ.
@@ -117,6 +123,17 @@
             // Compute the real bytes-per-pixel for the target output format.
             var bytesPerPixel = GetBytesPerPixel(outputFormat);
             var rowLength = dstWidth * bytesPerPixel;
+            var copyLength = Math.Min(rowLength, stride);
+
+            // Fast path: when rows are not flipped, the scratch frame has exactly the same line size as the
+            // destination and a row has no padding, both buffers are contiguous, so the whole image can be
+            // copied with a single memcpy instead of one call per row.
+            if (!flipVertically && tmp->linesize[0] == stride && copyLength == stride)
+            {
+                long totalBytes = (long)stride * dstHeight;
+                Buffer.MemoryCopy(tmp->data[0], destination, totalBytes, totalBytes);
+                return;
+            }
 
             // Copy each scaled row into the caller-owned destination buffer.
             // This avoids stale right-edge pixels and works correctly with stride/padding.
@@ -132,15 +149,14 @@
 
                 // Only copy the actual payload length; if stride is larger than the real row length,
                 // the remaining bytes must be zeroed to avoid stale data.
-                var copyLength = Math.Min(rowLength, stride);
                 Buffer.MemoryCopy(src, dst, stride, copyLength);
 
                 // Clear any padding bytes that remain after the real pixel payload.
-                for (var x = copyLength; x < stride; x++)
-                    dst[x] = 0;
+                if (copyLength < stride)
+                {
+                    new Span<byte>(dst + copyLength, stride - copyLength).Clear();
+                }
             }
-
-            ffmpeg.av_frame_free(&tmp);
         }
 
         private static int GetBytesPerPixel(AVPixelFormat format)
@@ -168,6 +184,47 @@
         protected override void OnDisposing()
         {
             ffmpeg.sws_freeContext(Pointer);
+
+            // Release the cached scratch frame allocated by GetScaledFrame (av_frame_free also frees its buffers).
+            if (scaledFrame != null)
+            {
+                var frame = scaledFrame;
+                ffmpeg.av_frame_free(&frame);
+                scaledFrame = null;
+            }
+        }
+
+        /// <summary>
+        ///     Returns the reusable scratch <see cref="AVFrame" /> that receives the scaled output in
+        ///     <see cref="AVFrameToBitmap" />, allocating it on first use. Its size and pixel format are always
+        ///     the converter's destination size and format, which never change, so it never needs reallocation.
+        /// </summary>
+        /// <returns>The scratch frame. It is owned by this converter and freed in <see cref="OnDisposing" />.</returns>
+        private AVFrame* GetScaledFrame()
+        {
+            if (scaledFrame != null)
+            {
+                return scaledFrame;
+            }
+
+            var frame = ffmpeg.av_frame_alloc();
+            if (frame == null)
+            {
+                throw new FFmpegException("Cannot allocate AVFrame.");
+            }
+
+            frame->format = (int)destinationFormat;
+            frame->width = destinationSize.Width;
+            frame->height = destinationSize.Height;
+
+            if (ffmpeg.av_frame_get_buffer(frame, 32) < 0)
+            {
+                ffmpeg.av_frame_free(&frame);
+                throw new FFmpegException("av_frame_get_buffer failed.");
+            }
+
+            scaledFrame = frame;
+            return frame;
         }
 
         private void UpdateContext(Size sourceSize, AVPixelFormat sourceFormat)
@@ -180,7 +237,8 @@
                 var swsContext = ffmpeg.sws_getContext(sourceSize.Width, sourceSize.Height, sourceFormat,
                     destinationSize.Width, destinationSize.Height, destinationFormat, (int)scaleMode, null, null, null);
 
-                if (swsContext == null) throw new FFmpegException("Cannot allocate SwsContext.");
+                if (swsContext == null)
+                    throw new FFmpegException("Cannot allocate SwsContext.");
 
                 UpdatePointer(swsContext);
                 lastSourceSize = sourceSize;
