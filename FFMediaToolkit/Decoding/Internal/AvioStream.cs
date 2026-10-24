@@ -13,7 +13,10 @@
     {
         private readonly Stream inputStream;
 
+#if !NETSTANDARD2_1
+        // Intermediate managed buffer. Needed only on netstandard2.0, where Stream.Read(Span<byte>) does not exist.
         private byte[] readBuffer = null;
+#endif
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AvioStream"/> class.
@@ -34,12 +37,24 @@
         /// <returns>Number of read bytes.</returns>
         public int Read(void* opaque, byte* buffer, int bufferLength)
         {
-            if (readBuffer == null)
+#if NETSTANDARD2_1
+            // Read straight into the native AVIO buffer.
+            int readed = inputStream.Read(new Span<byte>(buffer, bufferLength));
+
+            if (readed < 1)
+            {
+                return ffmpeg.AVERROR_EOF;
+            }
+
+            return readed;
+#else
+            // netstandard2.0 has no Stream.Read(Span<byte>), so the intermediate managed buffer is kept here.
+            if (readBuffer == null || readBuffer.Length < bufferLength)
             {
                 readBuffer = new byte[bufferLength];
             }
 
-            int readed = inputStream.Read(readBuffer, 0, readBuffer.Length);
+            int readed = inputStream.Read(readBuffer, 0, bufferLength);
 
             if (readed < 1)
             {
@@ -49,6 +64,7 @@
             Marshal.Copy(readBuffer, 0, (IntPtr)buffer, readed);
 
             return readed;
+#endif
         }
 
         /// <summary>
