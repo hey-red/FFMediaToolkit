@@ -14,6 +14,9 @@
     /// </summary>
     internal unsafe class InputContainer : Wrapper<AVFormatContext>
     {
+        // Size of the AVIO buffer used when reading from a managed Stream.
+        private const int AvioBufferSize = 64 * 1024;
+
         private readonly avio_alloc_context_read_packet readCallback;
 
         private readonly avio_alloc_context_seek seekCallBack;
@@ -117,7 +120,16 @@
             }
 
             var ptr = Pointer;
+
+            AVIOContext* customIo = readCallback != null ? ptr->pb : null;
+
             ffmpeg.avformat_close_input(&ptr);
+
+            if (customIo != null)
+            {
+                ffmpeg.av_freep(&customIo->buffer);
+                ffmpeg.avio_context_free(&customIo);
+            }
         }
 
         private static AVFormatContext* MakeContext(string url, MediaOptions options, AVFormatContextDelegate contextDelegate)
@@ -152,7 +164,7 @@
 
             var context = MakeContext(null, options, ctx =>
             {
-                int bufferLength = 4096;
+                int bufferLength = AvioBufferSize;
                 var avioBuffer = (byte*)ffmpeg.av_malloc((ulong)bufferLength);
                 if (avioBuffer == null)
                 {
