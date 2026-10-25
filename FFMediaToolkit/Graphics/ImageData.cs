@@ -195,7 +195,7 @@
             }
         }
 
-        private static int GetBitsPerPixel(ImagePixelFormat format)
+        internal static int GetBitsPerPixel(ImagePixelFormat format)
         {
             switch (format)
             {

@@ -16,6 +16,10 @@
     public class VideoStream : MediaStream
     {
         private readonly ImageConverter converter;
+
+        // The length of one row of converted pixels without any padding. Any buffer stride that is not smaller
+        // than this is accepted by the IntPtr overloads (see the check in TryGetNextFrame/TryGetFrame).
+        private readonly int minFrameStride;
         private bool isDisposed;
 
         /// <summary>
@@ -39,7 +43,7 @@
                 {
                     int targetWidth = OutputFrameSize.Width;
                     int targetHeight = OutputFrameSize.Height;
-                    
+
                     if (sar < 1.0)
                     {
                         // if a pixel is compressed horizontally, we stretch it vertically
@@ -50,7 +54,7 @@
                         // If a pixel is stretched horizontally, we stretch the horizontal dimension.
                         targetWidth = (int)Math.Round(targetWidth * sar);
                     }
-                    
+
                     // Frame dimensions for YUV/RGB color spaces MUST be even numbers.
                     if (targetWidth % 2 != 0) targetWidth++;
                     if (targetHeight % 2 != 0) targetHeight++;
@@ -63,6 +67,7 @@
 
             FrameStride = ImageData.EstimateStride(OutputFrameSize.Width, Options.VideoPixelFormat);
             FrameByteCount = FrameStride * OutputFrameSize.Height;
+            minFrameStride = ((ImageData.GetBitsPerPixel(Options.VideoPixelFormat) * OutputFrameSize.Width) + 7) / 8;
         }
 
         /// <summary>
@@ -128,7 +133,7 @@
         {
             if (buffer.Length < FrameByteCount)
             {
-                throw new ArgumentException(nameof(buffer), "Destination buffer is smaller than the converted bitmap data.");
+                throw new ArgumentException("Destination buffer is smaller than the converted bitmap data.", nameof(buffer));
             }
 
             try
@@ -158,9 +163,9 @@
         /// <exception cref="FFmpegException">Internal decoding error.</exception>
         public unsafe bool TryGetNextFrame(IntPtr buffer, int bufferStride)
         {
-            if (bufferStride != FrameStride)
+            if (bufferStride < minFrameStride)
             {
-                throw new ArgumentException(nameof(bufferStride), "Destination buffer is smaller than the converted bitmap data.");
+                throw new ArgumentException("The buffer stride is smaller than the length of a single row of the converted bitmap.", nameof(bufferStride));
             }
 
             try
@@ -220,7 +225,7 @@
         {
             if (buffer.Length < FrameByteCount)
             {
-                throw new ArgumentException(nameof(buffer), "Destination buffer is smaller than the converted bitmap data.");
+                throw new ArgumentException("Destination buffer is smaller than the converted bitmap data.", nameof(buffer));
             }
 
             try
@@ -251,9 +256,9 @@
         /// <exception cref="FFmpegException">Internal decoding error.</exception>
         public unsafe bool TryGetFrame(TimeSpan time, IntPtr buffer, int bufferStride)
         {
-            if (bufferStride != FrameStride)
+            if (bufferStride < minFrameStride)
             {
-                throw new ArgumentException(nameof(bufferStride), "Destination buffer is smaller than the converted bitmap data.");
+                throw new ArgumentException("The buffer stride is smaller than the length of a single row of the converted bitmap.", nameof(bufferStride));
             }
 
             try
