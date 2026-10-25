@@ -170,7 +170,7 @@
 
             try
             {
-                converter.AVFrameToBitmap(base.GetNextFrame() as VideoFrame, (byte*)buffer, FrameStride);
+                converter.AVFrameToBitmap(base.GetNextFrame() as VideoFrame, (byte*)buffer, bufferStride);
                 return true;
             }
             catch (EndOfStreamException)
@@ -263,7 +263,7 @@
 
             try
             {
-                converter.AVFrameToBitmap(base.GetFrame(time) as VideoFrame, (byte*)buffer, FrameStride);
+                converter.AVFrameToBitmap(base.GetFrame(time) as VideoFrame, (byte*)buffer, bufferStride);
                 return true;
             }
             catch (EndOfStreamException)
